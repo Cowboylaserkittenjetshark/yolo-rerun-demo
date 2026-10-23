@@ -13,6 +13,10 @@ use ultralytics_inference::{
 };
 
 const RERUN_LOG_INTERVAL: Duration = Duration::from_millis(100);
+const DEFAULT_MODEL_PATH: &str = match option_env!("YOLO_DEFAULT_MODEL") {
+    Some(path) => path,
+    None => "yolo26n.onnx",
+};
 
 #[derive(Parser)]
 #[command(
@@ -21,7 +25,7 @@ const RERUN_LOG_INTERVAL: Duration = Duration::from_millis(100);
 )]
 struct Args {
     /// Path to the YOLO ONNX model file.
-    #[arg(short, long, value_name = "PATH", default_value = "yolo26n.onnx")]
+    #[arg(short, long, value_name = "PATH", default_value = DEFAULT_MODEL_PATH)]
     model: String,
 
     /// Webcam device index (for example, 0 for /dev/video0).
