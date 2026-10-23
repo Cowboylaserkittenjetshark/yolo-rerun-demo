@@ -13475,6 +13475,7 @@ dependencies = [
 name = "yolo-rerun-demo"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "image",
  "minifb 0.27.0",
  "rerun",

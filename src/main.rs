@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use clap::Parser;
 use image::DynamicImage;
 #[cfg(feature = "raw-viewer")]
 use minifb::{Key, Window, WindowOptions};
@@ -12,6 +13,25 @@ use ultralytics_inference::{
 };
 
 const RERUN_LOG_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Parser)]
+#[command(
+    name = "yolo-rerun-demo",
+    about = "Run YOLO webcam inference and view annotated frames in Rerun or a local window."
+)]
+struct Args {
+    /// Path to the YOLO ONNX model file.
+    #[arg(short, long, value_name = "PATH", default_value = "yolo26n.onnx")]
+    model: String,
+
+    /// Webcam device index (for example, 0 for /dev/video0).
+    #[arg(short, long, value_name = "INDEX", default_value_t = 0)]
+    camera: u32,
+
+    /// Show the annotated frames in a local window instead of launching Rerun.
+    #[arg(long, alias = "raw-viewer")]
+    viewer: bool,
+}
 
 struct CapturedFrame {
     image: DynamicImage,
@@ -97,28 +117,20 @@ fn start_capture(webcam_index: u32) -> Result<LatestFrames, Box<dyn std::error::
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1);
-    let first_arg = args.next();
-    if matches!(first_arg.as_deref(), Some("--viewer" | "--raw-viewer")) {
+    let args = Args::parse();
+    if args.viewer {
         #[cfg(feature = "raw-viewer")]
-        return run_annotated_viewer();
+        return run_annotated_viewer(args.model, args.camera);
 
         #[cfg(not(feature = "raw-viewer"))]
         return Err("Window viewer support is disabled; rebuild with --features raw-viewer".into());
     }
 
-    let model_path = first_arg.unwrap_or_else(|| "yolo26n.onnx".to_owned());
-    let webcam_index = args
-        .next()
-        .map(|arg| arg.parse::<u32>())
-        .transpose()?
-        .unwrap_or(0);
-
-    let mut model = YOLOModel::load(model_path)?;
+    let mut model = YOLOModel::load(args.model)?;
     let rec = rerun::RecordingStreamBuilder::new("ultralytics_webcam")
         .batcher_config(rerun::log::ChunkBatcherConfig::LOW_LATENCY)
         .spawn()?;
-    let latest_frames = start_capture(webcam_index)?;
+    let latest_frames = start_capture(args.camera)?;
     let started = Instant::now();
     let mut last_rerun_log = Instant::now();
 
@@ -212,25 +224,11 @@ fn infer_and_display(
 }
 
 #[cfg(feature = "raw-viewer")]
-fn viewer_model_and_camera() -> Result<(String, u32), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(2);
-    let Some(first_arg) = args.next() else {
-        return Ok(("yolo26n.onnx".to_owned(), 0));
-    };
-    if let Ok(webcam_index) = first_arg.parse::<u32>() {
-        return Ok(("yolo26n.onnx".to_owned(), webcam_index));
-    }
-    let webcam_index = args
-        .next()
-        .map(|value| value.parse::<u32>())
-        .transpose()?
-        .unwrap_or(0);
-    Ok((first_arg, webcam_index))
-}
-
 #[cfg(feature = "raw-viewer")]
-fn run_annotated_viewer() -> Result<(), Box<dyn std::error::Error>> {
-    let (model_path, webcam_index) = viewer_model_and_camera()?;
+fn run_annotated_viewer(
+    model_path: String,
+    webcam_index: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut model = YOLOModel::load(model_path)?;
     let mut window: Option<Window> = None;
     let latest_frames = start_capture(webcam_index)?;
