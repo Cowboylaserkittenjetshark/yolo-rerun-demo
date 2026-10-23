@@ -4,12 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-nokhwa-source = ["dep:nokhwa"]
 raw-viewer = ["dep:minifb"]
 
 [dependencies]
 image = "0.25"
 minifb = { version = "0.27", optional = true }
-nokhwa = { version = "0.10.11", optional = true, default-features = false, features = ["decoding", "input-native"] }
 rerun = "0.38.1"
 ultralytics-inference = { version = "0.0.53", features = ["annotate", "video"] }

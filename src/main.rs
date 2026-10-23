@@ -8,20 +8,10 @@ use image::DynamicImage;
 #[cfg(feature = "raw-viewer")]
 use minifb::{Key, Window, WindowOptions};
 use ultralytics_inference::{
-    SourceMeta, YOLOModel, annotate::annotate_image, batch::BatchProcessor,
+    Source, SourceIterator, SourceMeta, YOLOModel, annotate::annotate_image, batch::BatchProcessor,
 };
 
 const RERUN_LOG_INTERVAL: Duration = Duration::from_millis(100);
-
-#[cfg(not(feature = "nokhwa-source"))]
-use ultralytics_inference::{Source, SourceIterator};
-
-#[cfg(feature = "nokhwa-source")]
-use nokhwa::{
-    Camera,
-    pixel_format::RgbFormat,
-    utils::{CameraIndex, RequestedFormat, RequestedFormatType, Resolution},
-};
 
 struct CapturedFrame {
     image: DynamicImage,
@@ -55,7 +45,6 @@ fn publish_error(latest: &LatestFrames, error: impl ToString) {
     }
 }
 
-#[cfg(not(feature = "nokhwa-source"))]
 fn finish_capture(latest: &LatestFrames) {
     let (state, ready) = &**latest;
     if let Ok(mut state) = state.lock() {
@@ -82,7 +71,6 @@ fn take_latest_frame(
     Ok(state.frame.take())
 }
 
-#[cfg(not(feature = "nokhwa-source"))]
 fn start_capture(webcam_index: u32) -> Result<LatestFrames, Box<dyn std::error::Error>> {
     let latest = Arc::new((Mutex::new(LatestFrameState::default()), Condvar::new()));
     let capture_latest = Arc::clone(&latest);
@@ -104,67 +92,6 @@ fn start_capture(webcam_index: u32) -> Result<LatestFrames, Box<dyn std::error::
             }
         }
         finish_capture(&capture_latest);
-    });
-    Ok(latest)
-}
-
-#[cfg(feature = "nokhwa-source")]
-fn start_capture(webcam_index: u32) -> Result<LatestFrames, Box<dyn std::error::Error>> {
-    let latest = Arc::new((Mutex::new(LatestFrameState::default()), Condvar::new()));
-    let capture_latest = Arc::clone(&latest);
-    thread::spawn(move || {
-        let format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::HighestResolution(
-            Resolution::new(640, 480),
-        ));
-        let mut camera = match Camera::new(CameraIndex::Index(webcam_index), format) {
-            Ok(camera) => camera,
-            Err(error) => {
-                publish_error(&capture_latest, error);
-                return;
-            }
-        };
-        if let Err(error) = camera.open_stream() {
-            publish_error(&capture_latest, error);
-            return;
-        }
-        let resolution = camera.resolution();
-        let fps = camera.frame_rate() as f32;
-        eprintln!(
-            "Nokhwa webcam {webcam_index}: {}x{} at {} FPS",
-            resolution.width(),
-            resolution.height(),
-            camera.frame_rate()
-        );
-        let mut frame_idx = 0;
-        loop {
-            let frame = match camera.frame() {
-                Ok(frame) => frame,
-                Err(error) => {
-                    publish_error(&capture_latest, error);
-                    return;
-                }
-            };
-            let rgb = match frame.decode_image::<RgbFormat>() {
-                Ok(rgb) => rgb,
-                Err(error) => {
-                    publish_error(&capture_latest, error);
-                    return;
-                }
-            };
-            publish_frame(
-                &capture_latest,
-                CapturedFrame {
-                    image: DynamicImage::ImageRgb8(rgb),
-                    meta: SourceMeta {
-                        frame_idx,
-                        total_frames: None,
-                        path: format!("Webcam {webcam_index}"),
-                        fps: Some(fps),
-                    },
-                },
-            );
-            frame_idx += 1;
-        }
     });
     Ok(latest)
 }
